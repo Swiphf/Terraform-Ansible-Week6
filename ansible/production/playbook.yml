@@ -1,0 +1,109 @@
+---
+ - hosts: all
+   become: yes
+   remote_user: bootcamp
+   vars_files:
+     - vault.yml
+
+   tasks:
+
+   - name: "Add nodejs apt key"
+     apt_key:
+       url: https://deb.nodesource.com/gpgkey/nodesource.gpg.key
+       state: present
+
+   - name: "Add nodejs 14.x ppa for apt repo"
+     apt_repository:
+       repo: deb https://deb.nodesource.com/node_14.x bionic main
+       update_cache: yes
+
+   - name: "Install nodejs"
+     apt:
+       update_cache: yes
+       name: nodejs
+       state: present
+
+   - name: Deploy from git repo
+     git:
+       repo: 'https://github.com/Swiphf/bootcamp-app.git'
+       dest: './bootcamp-app'
+
+   - name: "run npm init"
+     shell: npm init -y
+     args:
+       chdir: bootcamp-app/
+
+   - name: "run npm install"
+     shell: npm install
+     args:
+       chdir: bootcamp-app/
+
+   - name: Get public IP
+     community.general.ipify_facts:
+
+   - name: print ip
+     debug:
+       msg: "{{ ipify_public_ip }}"
+
+
+   - name: create reboot service
+     copy:
+       dest: "/etc/systemd/system/reboot.service"
+       mode: '0755'
+       content: |
+        [Unit]
+        Description=My custom startup script
+        After=network.target
+
+        [Service]
+        User=bootcamp
+        ExecStart=/etc/systemd/system/rebootScript.sh
+
+        [Install]
+        WantedBy=multi-user.target
+
+   - name: Copy file with owner and permissions
+     ansible.builtin.copy:
+       src: /home/controller/bootcamp/scripts/rebootScript.sh
+       dest: /etc/systemd/system/rebootScript.sh
+       owner: root
+       mode: '0755'
+
+   - name: create .env file
+     copy:
+       dest: "bootcamp-app/.env"
+       content: |
+         PORT=8080
+         HOST='0.0.0.0'
+         HOST_URL=http://{{ ipify_public_ip }}:8080
+         COOKIE_ENCRYPT_PWD=superAwesomePasswordStringThatIsAtLeast32CharactersLong!
+         NODE_ENV=development
+
+         PGHOST={{ pg_host }}
+         PGUSERNAME={{ pg_username }}
+         PGDATABASE={{ pg_database }}
+         PGPASSWORD={{ pg_password }}
+         PGPORT=5432
+
+         OKTA_ORG_URL=https://{{ okta_domain }}
+         OKTA_CLIENT_ID={{ okta_client }}
+         OKTA_CLIENT_SECRET={{ okta_client_secret }}
+
+   - name: db initialization
+     shell: npm run initdb
+     async: 30
+     poll: 0
+     args:
+       chdir: bootcamp-app/
+
+   - name: run app
+     shell: npm run dev
+     async: 30
+     poll: 0
+     args:
+       chdir: bootcamp-app/
+
+   - name: register reboot service
+     shell: systemctl daemon-reload && systemctl enable reboot.service && systemctl start reboot.service
+     args:
+       chdir: /etc/systemd/system/
