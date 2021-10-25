@@ -7,6 +7,7 @@ This README file is relevant only if you ssh into a controller.
 My project contains of two environments: Staging and Production.
 Each environment has a different resource group and thus a controller (one controller virtual machine for each environment).
 In order to ssh into each machine, 
+
 ---
 
 
